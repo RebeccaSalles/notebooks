@@ -14,11 +14,11 @@
 
 # COMMAND ----------
 
-# MAGIC %md Data preprocessing is a key step for mining and learning from data, and one of its main tasks is the transformation of data. This task is very important in the context of time series analysis, since most of the time series methods and models assume the property of stationarity, i.e., statistical properties do not change over time, which in practice is the exception and not the rule in most real datasets. There are several transformation methods designed to handle nonstationarity in time series, amomg them the moving average smoother (__MAS__). 
+# MAGIC %md Data preprocessing is a key step for mining and learning from data, and one of its main tasks is the transformation of data. This task is very important in the context of time series analysis, since most of the time series methods and models assume the property of stationarity, i.e., statistical properties do not change over time, which in practice is the exception and not the rule in most real datasets. There are several transformation methods designed to handle nonstationarity in time series, among them the moving average smoother (__MAS__). 
 # MAGIC 
 # MAGIC __MAS__ has been widely used especially in finance and econometrics, being useful for highlighting seasonality and long-term trends and patterns in a time series. MAS can detect the evolving behavior of a time series by minimizing random noise, and it can also be used for seasonal adjustment of a time series (Shumway and Stoffer 2010; Ogasawara et al.2010).
 # MAGIC 
-# MAGIC This work presents an experiment for applying an optimization function that derives "best" parameters of __MAS__ for each time series in a dataset. This function, named __fittestMAS__, was implemented and will soon be published in a new version (4.0.0) of the R-package __TSPred__. Since this function presents a somewhat high computational cost, especially when applied to large datasets, this work presents the distribution of its computation using a cluster (in __Databricks__) and __Spark__. The __SparkR__ is also used as a frontend for Spark. For the experiments, __fittestMAS__ is applied to benchmark datasets from time series prediction competitions. All datasets used are available in the __TSPred__ package.
+# MAGIC This work presents an experiment for applying an optimization function that derives "best" parameters of __MAS__ for each time series in a dataset. This function, named __fittestMAS__, was implemented and will soon be published in a new version (4.0.0) of the R-package __TSPred__ (Salles and Ogasawara 2017). Since this function presents a somewhat high computational cost, especially when applied to large datasets, this work presents the distribution of its computation using a cluster (in __Databricks__) and __Spark__. The __SparkR__ is also used as a frontend for Spark. For the experiments, __fittestMAS__ is applied to benchmark datasets from time series prediction competitions. All datasets used are available in the __TSPred__ package.
 
 # COMMAND ----------
 
@@ -139,8 +139,18 @@
 # MAGIC %md For the experiments, a __cluster__ with the following settings was created:
 # MAGIC * __Databricks Runtime Version__: 3.3 (includes Apache Spark 2.2.0, Scala 2.11)
 # MAGIC * __Driver Node__: Amazon m4.large (8.0 GB Memory, 2 Cores)
-# MAGIC * __2 Worker Nodes__: Amazon m4.large (8.0 GB Memory, 2 Cores)
+# MAGIC * __Worker Nodes__: Amazon m4.large (8.0 GB Memory, 2 Cores)
 # MAGIC * __Number of Worker Nodes__: 2
+
+# COMMAND ----------
+
+# MAGIC %md ######Datasets
+
+# COMMAND ----------
+
+# MAGIC %md In this experiment we use:
+# MAGIC * __The CATS Competition dataset__: presents an artificial time series with 5,000 observations, among which 100 are unknown. The unknown observations are grouped into five non-consecutive gaps of 20 successive values. The prediction of each gap may be considered a different problem, and each subset of the series followed by a gap may be considered a different time series to be modeled. In this context, we consider the CATS dataset as being composed of 5 time series of 980 observations.
+# MAGIC * __The NN3 Competition dataset__: present 111 time series having from 50 to 126 monthly observations drawn from homogeneous population of real empirical business time series.
 
 # COMMAND ----------
 
@@ -168,7 +178,7 @@ library("ggplot2")
 
 # COMMAND ----------
 
-# MAGIC %md A second step to the experiments is installing and loading the required packages into the Worker nodes. For this experiment, that includes the package TSPred and forecast, that contains our UDF functions, and is necessary to these functions, respectively.
+# MAGIC %md The SparkR closure capture does not include packages. So we need to import packages on each Worker inside a function. Therefore, a second step to the experiments is installing and loading the required packages into the Worker nodes. For this experiment, that includes the package TSPred and forecast, that contains our UDF functions, and is necessary to these functions, respectively.
 # MAGIC 
 # MAGIC For installing the packages on each node we can use the spark.lapply function that sends and executes the function provided in each worker node.
 
@@ -176,6 +186,7 @@ library("ggplot2")
 
 #Number of workers
 numWorkers <- 2
+
 #Executes the function on each worker node
 spark.lapply(1:numWorkers, function(x) {
   #Pacotes necessarios para experimento com fittestMAS
@@ -184,62 +195,79 @@ spark.lapply(1:numWorkers, function(x) {
 
 # COMMAND ----------
 
-# MAGIC %md #####5.2 - First Tests with SparkR Functions
+# MAGIC %md #####5.2 - Initial Tests with SparkR Functions
 
 # COMMAND ----------
 
-# MAGIC %md ######No Parallelization Test
+# MAGIC %md For the initial tests using the SparkR functions, the __NN3__ dataset was used together with a simpler function already published in the TSPred package, namely the __fittestPolyR__. Analogously to the __fittestMAS__, __fittestPolyR__ optimizes a polynomial regression to a given time series based on the smallest MSE prediction error. This choices were made so as to perform first tests with the SparkR functions without spending too much time, but still aproaching a large dataset. 
 
 # COMMAND ----------
 
+# MAGIC %md ######Local Single-threaded Computation Test
+
+# COMMAND ----------
+
+# MAGIC %md As a first test, we use the Driver to perform a non-distributed computation and measure the user, system and elapsed execution times.
+
+# COMMAND ----------
+
+#load the dataset from TSPred
 data(NN3.A,NN3.A.cont)
 
+#make a list of NN3 training and testing sets
 NN3.lst <- list()
 for(col in names(NN3.A)){
   NN3.lst[[col]] <- list(NN3.A[col],NN3.A.cont[col])
 }
 
+#apply the fittestPolyR function to the dataset using the R base lapply function
 execTime <- system.time(
   fPolyR <- lapply(NN3.lst, function(ts){TSPred::fittestPolyR(ts[[1]],ts[[2]], maxorder=5, se.fit=TRUE)$MSE})
 )
+
+print("Execution times of the non-distributed and non-parallelized computation:")
 print(execTime)
 
-fPolyR
+# COMMAND ----------
+
+# MAGIC %md ######How Not to Do It: Data Distribution with spark.lapply
 
 # COMMAND ----------
 
-# MAGIC %md ######How Not to Do It: Parallelization with spark.lapply
+# MAGIC %md Now testing the UDF friendly API of SparkR, we start by performing the same test using the spark.lapply function which distributes the computation across each core of each Worker nodes. As can be seen in the results, this version of the computation actually takes much longer than the non-distributed one. This fact is due to the non-apropriate use of the spark.lapply function, since we are packing data in the closure and using spark.lapply() to try and distribute the large dataset. This forces the function to use the network to send the data to each Worker node through the function calls. This use of the network for data transfering is in fact very expensive and causes communication overhead, culminating in the increase in time for the computation to finish.
 
 # COMMAND ----------
 
-data(NN3.A,NN3.A.cont)
-
-NN3.lst <- list()
-for(col in names(NN3.A)){
-  NN3.lst[[col]] <- list(NN3.A[col],NN3.A.cont[col])
-}
-
+#apply the fittestPolyR function to the dataset using the SparkR base spark.lapply function
 execTime <- system.time(
   fPolyR <- spark.lapply(NN3.lst, function(ts){
+    #loading the package in the Worker nodes
     require("TSPred")
     TSPred::fittestPolyR(ts[[1]],ts[[2]], maxorder=5, se.fit=TRUE)
   })
 )
+
+print("Execution times of the spark.lapply distributed computation:")
 print(execTime)
 
 # COMMAND ----------
 
-# MAGIC %md ######How Not to Do It (The Sequel): Parallelization with gapplyCollect
+# MAGIC %md ######How Not to Do It (The Sequel): Data Distribution with gapplyCollect
 
 # COMMAND ----------
 
-data(NN3.A,NN3.A.cont)
+# MAGIC %md Now performing the same test using the gapply function which groups the data based on a given column and then distributes the computation across each core of each Worker nodes. As can be seen in the results, this version of the computation takes the longest. This fact is probably due to the additional tasks of grouping and combining the results of the computation of each group. Furthermore, since our only possible grouping column regards the name of each time series, the grouping task does not reduce or facilitate computations which are done in each 111 time series groups of 1 time series.
 
+# COMMAND ----------
+
+#creating single data.frame with training and testing sets
 NN3 <- data.frame(t(rbind(NN3.A,NN3.A.cont)))
 NN3 <- cbind(nameTS=rownames(NN3),NN3)
 
+#creating the SparkDataFrame
 NN3.df <- createDataFrame(NN3)
 
+#using SparkR's gapply to group the data into different time series and distribute the computations across Worker nodes
 execTime <- system.time(
   fPolyR <- gapplyCollect(NN3.df,"nameTS", function(key,x) {
     require("TSPred")
@@ -263,28 +291,37 @@ execTime <- system.time(
   })
 )
 
+print("Execution times of the gapplyCollect distributed computation:")
 print(execTime)
 
-fPolyR
+# COMMAND ----------
 
+# MAGIC %md ######Now we're talking!: Data Distribution with dapplyCollect
 
 # COMMAND ----------
 
-# MAGIC %md ######Now we're talking: Parallelization with dapplyCollect
+# MAGIC %md Now performing the same test using the dapply function which performs computation for each data partition distributed across each core of each Worker nodes. For that the data is previously partitioned using the __repartition__ function of SparkR, responsable for returning a new SparkDataFrame that has the same partitions as the number of processors in the cluster (that is, the number of Worker nodes times the number of cores in each of these nodes). As can be seen in the results, this version of the computation is the fastest and it actually takes only 55% of the time of the non-distributed version.
+# MAGIC 
+# MAGIC Summary of comparison with the non-distributed version:
+# MAGIC * __Elapsed time:__ 45% faster
+# MAGIC * __Speedup:__ 1.8
+# MAGIC 
+# MAGIC The partitioning of the data corresponding to the number of processors in the cluster seem to contribute to the overall computational costs. Moreover, since the data partitions are located in-memory in the Worker nodes, no time series need to be passed in network communications and the data distributed computation is optimized.
+# MAGIC 
+# MAGIC Henceforth, this is the method adopted for evaluating the __fittestMAS__ function.
 
 # COMMAND ----------
 
-data(NN3.A,NN3.A.cont)
-
-NN3 <- data.frame(t(rbind(NN3.A,NN3.A.cont)))
-NN3 <- cbind(nameTS=rownames(NN3),NN3)
-
+#creating the SparkDataFrame
 NN3.df <- createDataFrame(NN3)
 
 numWorkerCores <- 2
 numWorkers <- 2
+#Partitioning the NN3.df and returning a new SparkDataFrame that has exactly numPartitions
+#numPartitions is equal to numWorkerCores*numWorkers, i.e., the number of different processors in the Spark cluster
 rNN3.df <- repartition(NN3.df, numPartitions = numWorkerCores*numWorkers)
 
+#using SparkR's dapply to apply the computations to each partition of (111/numPartitions) time series across Worker nodes
 execTime <- system.time(
   fPolyR <- dapplyCollect(rNN3.df, function(x) {
     require("TSPred")
@@ -305,13 +342,12 @@ execTime <- system.time(
   })
 )
 
+print("Execution times of the dapplyCollect distributed computation:")
 print(execTime)
-
-fPolyR
 
 # COMMAND ----------
 
-# MAGIC %md #####5.3 - Evaluating fittestMAS with and without Parallelization
+# MAGIC %md #####5.3 - Evaluating fittestMAS with and without Data Distribution
 
 # COMMAND ----------
 
@@ -319,16 +355,28 @@ fPolyR
 
 # COMMAND ----------
 
+# MAGIC %md For using the more complex __fittestMAS__ function, first we need to load the RData file containing its implementation, since it is not yet published in the TSPred package. The file also contains the smaller CATS dataset which is henceforth used in this experiment, in order to reduce the overall time of this experiment.
+
+# COMMAND ----------
+
 install.packages("repmis", repos = "http://cran.us.r-project.org")
 library(repmis)
 
+#loading RData file
 source_data("https://github.com/RebeccaSalles/TSPred/blob/master/dev/12.17/exp/Exp_Base.RData?raw=True")
 
 # COMMAND ----------
 
-#Analysis of fittness and prediction of many series and many transforms
-sparkr.MASExp <- function(timeseries,timeseries.test, numProc,
-                          rank.by=c("MSE","NMSE","MAPE","sMAPE","MaxError","AIC","AICc","BIC","logLik")){
+# MAGIC %md ######Experiment functions definition
+
+# COMMAND ----------
+
+# MAGIC %md The following functions __sparkr.MASExp__ and __MASExp__ perform the experiments of evaluating the __fittestMAS__ function using the given time series dataset with and without SparkR's data distribution (using dapplyCollect()), respectively. 
+
+# COMMAND ----------
+
+#Performs the experiment using SparkR's data distributed computation (with dapplyCollect())
+sparkr.MASExp <- function(timeseries,timeseries.test, numProc){
     
   n.ahead <- nrow(timeseries.test)
 
@@ -352,8 +400,8 @@ sparkr.MASExp <- function(timeseries,timeseries.test, numProc,
       
       print(paste("Computing results for time series ",nameTS,sep=""))
       #results of transfom experiments (rank and ranked.results)      
-      transfResults <- fittestMAS(tsi,tsi.cont, model="arima", max.d=2, max.D=1, stationary=FALSE, rank.by=rank.by)
-      results <- rbind(results,data.frame(TS = nameTS, Order = transfResults$order, MSE = transfResults$MSE))        
+      transfResults <- fittestMAS(tsi,tsi.cont, model="arima", max.d=2, max.D=1, stationary=FALSE, rank.by="MSE")
+      results <- rbind(results,data.frame(timeSeries = nameTS, optimMASOrder = transfResults$order, MSE = transfResults$MSE))        
     }
     results
   }
@@ -367,13 +415,8 @@ sparkr.MASExp <- function(timeseries,timeseries.test, numProc,
 
 # COMMAND ----------
 
-sparkr.MASExp(CATS,CATS.cont, numWorkers=2, numWorkerCores=2, rank.by="MSE")
-
-# COMMAND ----------
-
-#Analysis of fittness and prediction of many series and many transforms
-MASExp <- function(timeseries,timeseries.test,
-                          rank.by=c("MSE","NMSE","MAPE","sMAPE","MaxError","AIC","AICc","BIC","logLik")){
+#Performs the experiment with local and single-threaded computations (using simple lapply of R base)
+MASExp <- function(timeseries,timeseries.test){
 
   ts.lst <- list()
   for(col in names(timeseries)){
@@ -381,12 +424,12 @@ MASExp <- function(timeseries,timeseries.test,
   }
   
   execTime <- system.time(
-    transfResults <- lapply(ts.lst, function(ts){fittestMAS(ts[[1]],ts[[2]], model="arima", max.d=2, max.D=1, stationary=FALSE, rank.by=rank.by)})
+    transfResults <- lapply(ts.lst, function(ts){fittestMAS(ts[[1]],ts[[2]], model="arima", max.d=2, max.D=1, stationary=FALSE, rank.by="MSE")})
   )
   
   results <- NULL
   for(ts in names(transfResults)){
-    results <- rbind(results,data.frame(TS = ts, Order = transfResults[[ts]]$order, MSE = transfResults[[ts]]$MSE))
+    results <- rbind(results,data.frame(timeSeries = ts, optimMASOrder = transfResults[[ts]]$order, MSE = transfResults[[ts]]$MSE))
   }
   
   return(list(time=execTime,results=results))
@@ -394,7 +437,32 @@ MASExp <- function(timeseries,timeseries.test,
 
 # COMMAND ----------
 
-MASExp(CATS,CATS.cont, rank.by="MSE")
+# MAGIC %md ######Results of Local and Single-Threaded Computations
+
+# COMMAND ----------
+
+MASExp(CATS,CATS.cont)
+
+# COMMAND ----------
+
+# MAGIC %md ######Results of Data-Distributed Computations using SparkR
+
+# COMMAND ----------
+
+# MAGIC %md Summary of comparison with the non-distributed (local and single-threaded) version:
+# MAGIC * __Elapsed time:__ 58% faster
+# MAGIC * __Speedup:__ 2.42
+
+# COMMAND ----------
+
+numWorkers<-2
+numWorkerCores<-2
+
+sparkr.MASExp(CATS,CATS.cont, numProc = numWorkers * numWorkerCores)
+
+# COMMAND ----------
+
+# MAGIC %md ######Results over 10 Runs
 
 # COMMAND ----------
 
@@ -402,17 +470,9 @@ times <- NULL
 for(i in 1:10){
   # Clear all cached tables in the current session
   clearCache()
-  t <- MASExp(CATS,CATS.cont, rank.by="MSE")$time
+  t <- MASExp(CATS,CATS.cont)$time
   times <- rbind(times,data.frame(user=t[1],system=t[2],elapsed=t[3]))
 }
-
-# COMMAND ----------
-
-par(mfrow = c(1, 2))
-boxplot(times[,c("elapsed")], width=10, height=4)
-boxplot(sparkr.times[,c("elapsed")], width=10, height=4)
-#boxplot(times[,c("system")], width=10, height=4)
-#boxplot(times[,c("elapsed")], width=10, height=4)
 
 # COMMAND ----------
 
@@ -420,16 +480,26 @@ numWorkers<-2
 numWorkerCores<-2
 sparkr.times <- NULL
 for(i in 1:10){
-  t <- sparkr.MASExp(CATS,CATS.cont, numProc=numWorkers*numWorkerCores, rank.by="MSE")$time
+  t <- sparkr.MASExp(CATS,CATS.cont, numProc=numWorkers*numWorkerCores)$time
   sparkr.times <- rbind(sparkr.times,data.frame(user=t[1],system=t[2],elapsed=t[3]))
 }
 
 # COMMAND ----------
 
-par(mfrow = c(1, 3))
-boxplot(times[,c("user")], width=10, height=4)
-boxplot(times[,c("system")], width=10, height=4)
-boxplot(times[,c("elapsed")], width=10, height=4)
+ExpTimes <- rbind(data.frame(comp="Local",times),data.frame(comp="SparkR",sparkr.times))
+
+ggplot(data = ExpTimes, aes(x=factor(1), y=elapsed, fill=comp)) +
+  geom_boxplot() +  facet_wrap(~comp,scales="free",ncol=2)+
+  theme(axis.text.x=element_blank(),
+        axis.title.x=element_blank(), 
+        axis.title.y = element_text("Elapsed time"))+
+  ylab("Elapsed time")+
+  labs(fill="Computation")
+
+
+# COMMAND ----------
+
+# MAGIC %md ######Mean SparkR Results over 10 Runs and Increasing Number of Processors
 
 # COMMAND ----------
 
@@ -438,13 +508,14 @@ numWorkerCores <- 2
 sparkr.times.proc <- NULL
 for(numProc in 1:(numWorkers*numWorkerCores)){
   for(i in 1:10){
-    t <- sparkr.MASExp(CATS,CATS.cont, numProc=numProc, rank.by="MSE")$time
+    t <- sparkr.MASExp(CATS,CATS.cont, numProc=numProc)$time
     sparkr.times.proc <- rbind(sparkr.times.proc,data.frame(numProc=numProc,user=t[1],system=t[2],elapsed=t[3]))
   }
 }
 
 # COMMAND ----------
 
+#Aggregating results and taking mean elapsed times
 sparkr.times.proc.agg <- cbind(aggregate(sparkr.times.proc$elapsed, by=list(sparkr.times.proc$numProc), FUN=mean),
                                aggregate(sparkr.times.proc$system, by=list(sparkr.times.proc$numProc), FUN=mean)[2],
                                aggregate(sparkr.times.proc$user, by=list(sparkr.times.proc$numProc), FUN=mean)[2])
@@ -453,11 +524,38 @@ sparkr.times.proc.agg <- head(sparkr.times.proc.agg,4)
 
 # COMMAND ----------
 
-#ggplot2::ggplot(data=sparkr.times.proc.agg, aes(x=numProc,y=elapsed))+
-#geom_line() +
-#geom_point()
-plot(sparkr.times.proc.agg$numProc,sparkr.times.proc.agg$elapsed,type="l",xlab="Number of Processors",ylab="Mean Elapsed Time",col="blue",lwd="2")
+ggplot2::ggplot(data=sparkr.times.proc.agg, aes(x=numProc,y=elapsed))+
+geom_line() +
+geom_point()
+#plot(sparkr.times.proc.agg$numProc,sparkr.times.proc.agg$elapsed,type="l",xlab="Number of Processors",ylab="Mean Elapsed Time",col="blue",lwd="2")
 
 # COMMAND ----------
 
+ggplot2::ggplot(data=sparkr.times.proc.agg, aes(x=numProc,y=elapsed[1]/elapsed))+
+geom_line() +
+geom_point()
 plot(sparkr.times.proc.agg$numProc,sparkr.times.proc.agg$elapsed[1]/sparkr.times.proc.agg$elapsed,type="l",xlab="Number of Processors",ylab="Speedup",col="blue",lwd="2")
+
+# COMMAND ----------
+
+# MAGIC %md #####Reference
+
+# COMMAND ----------
+
+# MAGIC %md Falaki, H. Databricks. Parallelizing Existing R Packages with SparkR. Software. Presented at Spark Summit East, 2017. Retrieved from https://pt.slideshare.net/databricks/parallelizing-existing-r-packages-with-sparkr/5
+# MAGIC 
+# MAGIC Ogasawara E, Martinez LC, Oliveira Dd, Zimbr˜ao G, Pappa GL, Mattoso M (2010). “Adaptive
+# MAGIC Normalization: A novel data normalization approach for non-stationary time series.” In
+# MAGIC The 2010 International Joint Conference on Neural Networks (IJCNN), pp. 1–8. doi:
+# MAGIC 10.1109/IJCNN.2010.5596746.
+# MAGIC 
+# MAGIC Salles RP, Ogasawara E (2017). TSPred: Functions for Benchmarking Time Series Prediction
+# MAGIC Prediction. R package version 3.0.2, URL https://CRAN.R-project.org/package=
+# MAGIC TSPred
+# MAGIC 
+# MAGIC Shumway RH, Stoffer DS (2010). Time Series Analysis and Its Applications: With R Examples.
+# MAGIC 3rd edition. Springer, New York. ISBN 978-1-4419-7864-6.
+# MAGIC 
+# MAGIC Venkataraman, S., Yang, Z., Liu, D., Liang, E., Falaki, H., Meng, X., ... & Zaharia, M. (2016, June). Sparkr: Scaling r programs with spark. In Proceedings of the 2016 International Conference on Management of Data (pp. 1099-1104). ACM.
+# MAGIC 
+# MAGIC Zaharia, M., Xin, R. S., Wendell, P., Das, T., Armbrust, M., Dave, A., ... & Ghodsi, A. (2016). Apache Spark: A unified engine for big data processing. Communications of the ACM, 59(11), 56-65.
