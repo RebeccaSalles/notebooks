@@ -524,17 +524,24 @@ sparkr.times.proc.agg <- head(sparkr.times.proc.agg,4)
 
 # COMMAND ----------
 
-ggplot2::ggplot(data=sparkr.times.proc.agg, aes(x=numProc,y=elapsed))+
-geom_line() +
-geom_point()
-#plot(sparkr.times.proc.agg$numProc,sparkr.times.proc.agg$elapsed,type="l",xlab="Number of Processors",ylab="Mean Elapsed Time",col="blue",lwd="2")
+ggplot(data=sparkr.times.proc.agg, aes(x=numProc,y=elapsed))+
+geom_line(size=2,col="blue") +
+geom_point(size=2,col="red")+
+geom_text(aes(label=round(elapsed)),hjust=1, vjust=2)+
+xlab("Number of Processors")+
+ylab("Mean Elapsed Time")+
+theme(axis.title = element_text(size = rel(1.5)), axis.text = element_text(size = rel(1.5)))
 
 # COMMAND ----------
 
-ggplot2::ggplot(data=sparkr.times.proc.agg, aes(x=numProc,y=elapsed[1]/elapsed))+
-geom_line() +
-geom_point()
-plot(sparkr.times.proc.agg$numProc,sparkr.times.proc.agg$elapsed[1]/sparkr.times.proc.agg$elapsed,type="l",xlab="Number of Processors",ylab="Speedup",col="blue",lwd="2")
+ggplot(data=sparkr.times.proc.agg, aes(x=numProc,y=elapsed[1]/elapsed))+
+geom_abline(intercept = 0,size=2,col="lightblue")+
+geom_line(size=2,col="blue") +
+geom_point(size=2,col="red")+
+geom_text(aes(label=round(elapsed[1]/elapsed,2)),hjust=-0.1, vjust=2)+
+xlab("Number of Processors")+
+ylab("Speedup")+
+theme(axis.title = element_text(size = rel(1.5)), axis.text = element_text(size = rel(1.5)))
 
 # COMMAND ----------
 
