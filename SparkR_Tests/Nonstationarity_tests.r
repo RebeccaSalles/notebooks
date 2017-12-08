@@ -43,11 +43,11 @@
 # MAGIC 
 # MAGIC The Spark architecture follows the following image:
 # MAGIC 
-# MAGIC ![Spark architecture][logo]
-# MAGIC [logo]: http://blog.cloudera.com/wp-content/uploads/2015/09/pyspark.png "Spark architecture"
+# MAGIC ![Spark architecture](https://0x0fff.com/wp-content/uploads/2015/03/Spark-Architecture-Official.png "Spark architecture")
 # MAGIC 
 # MAGIC * The Driver node: creates a the SparkContext and RDDs and stages ip or sends off transformation and action functions.
-# MAGIC * The Cluster Manager: allocates resources
+# MAGIC * The Cluster Manager: allocates resources accross cluster and manages scheduling (this role is adopted by Databricks. See next section.).
+# MAGIC * The Worker nodes: actually run the application tasks, return results to Driver, and provide in-memory storage for cached RDDs.
 # MAGIC 
 # MAGIC Recently it was developed, __SparkR__ an R package that provides a frontend to Apache Spark and uses Spark’s distributed computation engine to enable large scale data analysis from the R shell (Venkataraman et al.). It addresses a limitation of __R__, which is usually limited by single threaded computation and that can only process data sets that fit in a single machine’s memory. It uses the same structures as __SparkSQL__, that is the __DataFrames__, and also has general SQL functions in its API. Starting with Spark 1.4.x, SparkR provides a distributed DataFrame implementation that supports operations like selection, filtering, aggregation etc. (similar to R data frames, dplyr) but on large datasets.
 # MAGIC 
@@ -68,12 +68,17 @@
 # MAGIC 2. an account in AWS was created;
 # MAGIC 3. information of the AWS account was configured in Databricks.
 # MAGIC 
-# MAGIC Occurred problems:
-# MAGIC * __Regarding step 1__: The free account option of Databricks (Databricks Community) 
+# MAGIC __Occurred problems__:
+# MAGIC * __Regarding step 1__: The free account option of Databricks (Databricks Community) did not provide access to any Worker nodes, which are required in the Spark architecture. In order to overcome this limitation, a Full-platform 14-Day Free Trial account was created. However, this Free Trial account excluded AWS charges which are summed according to demand. 
+# MAGIC * __Regarding step 2__: The Trial account required information of an AWS account. For that reason a free AWS account was created. This account 
 
 # COMMAND ----------
 
 # MAGIC %md ####5 - Experiments
+
+# COMMAND ----------
+
+# MAGIC %md ######Settings
 
 # COMMAND ----------
 
