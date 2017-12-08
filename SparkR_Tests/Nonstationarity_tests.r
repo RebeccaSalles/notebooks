@@ -59,7 +59,7 @@
 # MAGIC 
 # MAGIC Since the version 2.0 of __SparkR__, it presents functions like dapply, gapply and spark.lapply that allow the use of user defined functions (UDF) to be applied to DataFrames (Falaki 2017).  To this experiment this functions will be the most appropriate as the objective is precisely evaluate the previously implemented R function __fittestMAS__.
 # MAGIC 
-# MAGIC __spark.lapply:__ runs a function over a list of elements. Usage: spark.lapply().
+# MAGIC ######__spark.lapply:__ runs a function over a list of elements. Usage: spark.lapply().
 # MAGIC 
 # MAGIC General algorithm:
 # MAGIC 
@@ -68,12 +68,11 @@
 # MAGIC 2. Executes the function.
 # MAGIC 3. Returns the results of all worker as a list to R driver.
 # MAGIC 
-# MAGIC spark.apply() control flow (adapted from (Falaki 2017)):
+# MAGIC spark.apply() control flow (source (Falaki 2017)):
 # MAGIC 
-# MAGIC ![Spark architecture](https://0x0fff.com/wp-content/uploads/2015/03/Spark-Architecture-Official.png "Spark architecture")
-# MAGIC ![sparkapply](notebooks/SparkR_Tests/dapplyCollect.png "spark.apply control")
+# MAGIC ![spark apply](https://image.slidesharecdn.com/parallelizingexistingrpackages-170210000051/95/parallelizing-existing-r-packages-with-sparkr-9-638.jpg?cb=1486684983 "spark.apply control")
 # MAGIC 
-# MAGIC __dapply:__ applies a function over each partition of a SparkDataframe. Usage: dapply() or dapplyCollet().
+# MAGIC ######__dapply:__ applies a function over each partition of a SparkDataframe. Usage: dapply() or dapplyCollet().
 # MAGIC 
 # MAGIC General algorithm:
 # MAGIC 
@@ -86,7 +85,11 @@
 # MAGIC 
 # MAGIC dapplyCollect(sparkDF,func): combines results as R data.frame.
 # MAGIC 
-# MAGIC __gapply:__ applies a function to each group within a SparkDataframe. Usage: gapply() or gapplyCollet().
+# MAGIC dapplyCollect() control flow (source (Falaki 2017)):
+# MAGIC 
+# MAGIC ![dapply](https://image.slidesharecdn.com/parallelizingexistingrpackages-170210000051/95/parallelizing-existing-r-packages-with-sparkr-12-638.jpg?cb=1486684983 "dapply control")
+# MAGIC 
+# MAGIC ######__gapply:__ applies a function to each group within a SparkDataframe. Usage: gapply() or gapplyCollet().
 # MAGIC 
 # MAGIC General algorithm:
 # MAGIC 
@@ -95,9 +98,13 @@
 # MAGIC 2. Sends the R function to the R worker.
 # MAGIC 3. Executes the function.
 # MAGIC 
-# MAGIC dapply(sparkDF,cols,func,schema): combines results as DataFrame with provided schema.
+# MAGIC gapply(sparkDF,cols,func,schema): combines results as DataFrame with provided schema.
 # MAGIC 
-# MAGIC dapplyCollect(sparkDF,cols,func): combines results as R data.frame.
+# MAGIC gapplyCollect(sparkDF,cols,func): combines results as R data.frame.
+# MAGIC 
+# MAGIC gapplyCollect() control flow (source (Falaki 2017)):
+# MAGIC 
+# MAGIC ![gapply](https://image.slidesharecdn.com/parallelizingexistingrpackages-170210000051/95/parallelizing-existing-r-packages-with-sparkr-14-638.jpg?cb=1486684983 "gapply control")
 
 # COMMAND ----------
 
@@ -129,7 +136,7 @@
 
 # COMMAND ----------
 
-# MAGIC %md For initial tests a __cluster__ with following settings was created:
+# MAGIC %md For the experiments, a __cluster__ with the following settings was created:
 # MAGIC * __Databricks Runtime Version__: 3.3 (includes Apache Spark 2.2.0, Scala 2.11)
 # MAGIC * __Driver Node__: Amazon m4.large (8.0 GB Memory, 2 Cores)
 # MAGIC * __2 Worker Nodes__: Amazon m4.large (8.0 GB Memory, 2 Cores)
@@ -426,7 +433,7 @@ boxplot(times[,c("elapsed")], width=10, height=4)
 
 # COMMAND ----------
 
-numWorkers <- 4
+numWorkers <- 2
 numWorkerCores <- 2
 sparkr.times.proc <- NULL
 for(numProc in 1:(numWorkers*numWorkerCores)){
@@ -435,3 +442,22 @@ for(numProc in 1:(numWorkers*numWorkerCores)){
     sparkr.times.proc <- rbind(sparkr.times.proc,data.frame(numProc=numProc,user=t[1],system=t[2],elapsed=t[3]))
   }
 }
+
+# COMMAND ----------
+
+sparkr.times.proc.agg <- cbind(aggregate(sparkr.times.proc$elapsed, by=list(sparkr.times.proc$numProc), FUN=mean),
+                               aggregate(sparkr.times.proc$system, by=list(sparkr.times.proc$numProc), FUN=mean)[2],
+                               aggregate(sparkr.times.proc$user, by=list(sparkr.times.proc$numProc), FUN=mean)[2])
+names(sparkr.times.proc.agg) <- c("numProc","elapsed","system","user")
+sparkr.times.proc.agg <- head(sparkr.times.proc.agg,4)
+
+# COMMAND ----------
+
+#ggplot2::ggplot(data=sparkr.times.proc.agg, aes(x=numProc,y=elapsed))+
+#geom_line() +
+#geom_point()
+plot(sparkr.times.proc.agg$numProc,sparkr.times.proc.agg$elapsed,type="l",xlab="Number of Processors",ylab="Mean Elapsed Time",col="blue",lwd="2")
+
+# COMMAND ----------
+
+plot(sparkr.times.proc.agg$numProc,sparkr.times.proc.agg$elapsed[1]/sparkr.times.proc.agg$elapsed,type="l",xlab="Number of Processors",ylab="Speedup",col="blue",lwd="2")
