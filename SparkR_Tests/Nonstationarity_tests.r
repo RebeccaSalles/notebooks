@@ -35,11 +35,11 @@
 
 # COMMAND ----------
 
-# MAGIC %md ####3 - Spark and SparkR
+# MAGIC %md ####3 - Spark
 
 # COMMAND ----------
 
-# MAGIC %md __Apache Spark__ is an engine for distributed data processing, having a data-sharing abstraction called “Resilient Distributed Datasets” (RDDs). RDDs are a collection of data distributed over several nodes of a cluster that can be referenced as a single (local) collection. It can capture a wide range of processing workloads that previously needed separate engines, including SQL, streaming, machine learning, and graph processing (Zaharia et al.). Spark's applications are easier to develop using a unified API and it can run diverse functions over the same data, often in memory. One of the main libraries of Spark is the __SparkSQL__, which provides a higher-level abstraction called __DataFrames__, which conceptually are RDDs full of records (tuples) with a known schema (Zaharia et al.).
+# MAGIC %md __Apache Spark__ is an engine for distributed data processing, having a data-sharing abstraction called “Resilient Distributed Datasets” (RDDs). RDDs are a collection of data distributed over several nodes of a cluster that can be referenced as a single (local) collection. It can capture a wide range of processing workloads that previously needed separate engines, including SQL, streaming, machine learning, and graph processing (Zaharia et al. 2016). Spark's applications are easier to develop using a unified API and it can run diverse functions over the same data, often in memory. One of the main libraries of Spark is the __SparkSQL__, which provides a higher-level abstraction called __DataFrames__, which conceptually are RDDs full of records (tuples) with a known schema (Zaharia et al. 2016).
 # MAGIC 
 # MAGIC The Spark architecture follows the following image:
 # MAGIC 
@@ -48,10 +48,56 @@
 # MAGIC * The Driver node: creates a the SparkContext and RDDs and stages ip or sends off transformation and action functions.
 # MAGIC * The Cluster Manager: allocates resources accross cluster and manages scheduling (this role is adopted by Databricks. See next section.).
 # MAGIC * The Worker nodes: actually run the application tasks, return results to Driver, and provide in-memory storage for cached RDDs.
+
+# COMMAND ----------
+
+# MAGIC %md ####4 - SparkR
+
+# COMMAND ----------
+
+# MAGIC %md Recently it was developed, __SparkR__ an R package that provides a frontend to Apache Spark and uses Spark’s distributed computation engine to enable large scale data analysis from the R shell (Venkataraman et al.). It addresses a limitation of __R__, which is usually limited by single threaded computation and that can only process data sets that fit in a single machine’s memory. It uses the same structures as __SparkSQL__, that is the __DataFrames__, and also has general SQL functions in its API. Starting with Spark 1.4.x, SparkR provides a distributed DataFrame implementation that supports operations like selection, filtering, aggregation etc. (similar to R data frames, dplyr) but on large datasets.
 # MAGIC 
-# MAGIC Recently it was developed, __SparkR__ an R package that provides a frontend to Apache Spark and uses Spark’s distributed computation engine to enable large scale data analysis from the R shell (Venkataraman et al.). It addresses a limitation of __R__, which is usually limited by single threaded computation and that can only process data sets that fit in a single machine’s memory. It uses the same structures as __SparkSQL__, that is the __DataFrames__, and also has general SQL functions in its API. Starting with Spark 1.4.x, SparkR provides a distributed DataFrame implementation that supports operations like selection, filtering, aggregation etc. (similar to R data frames, dplyr) but on large datasets.
+# MAGIC Since the version 2.0 of __SparkR__, it presents functions like dapply, gapply and spark.lapply that allow the use of user defined functions (UDF) to be applied to DataFrames (Falaki 2017).  To this experiment this functions will be the most appropriate as the objective is precisely evaluate the previously implemented R function __fittestMAS__.
 # MAGIC 
-# MAGIC Since the version 2.0 of __SparkR__, it presents functions like dapply, gapply and spark.lapply that allow the use of user defined functions (UDF) to be applied to DataFrames.  To this experiment this functions will be the most appropriate.
+# MAGIC __spark.lapply:__ runs a function over a list of elements. Usage: spark.lapply().
+# MAGIC 
+# MAGIC General algorithm:
+# MAGIC 
+# MAGIC For each element of a list:
+# MAGIC 1. Sends the function to an R worker.
+# MAGIC 2. Executes the function.
+# MAGIC 3. Returns the results of all worker as a list to R driver.
+# MAGIC 
+# MAGIC spark.apply() control flow (adapted from (Falaki 2017)):
+# MAGIC 
+# MAGIC ![Spark architecture](https://0x0fff.com/wp-content/uploads/2015/03/Spark-Architecture-Official.png "Spark architecture")
+# MAGIC ![sparkapply](notebooks/SparkR_Tests/dapplyCollect.png "spark.apply control")
+# MAGIC 
+# MAGIC __dapply:__ applies a function over each partition of a SparkDataframe. Usage: dapply() or dapplyCollet().
+# MAGIC 
+# MAGIC General algorithm:
+# MAGIC 
+# MAGIC For each partition of a SparkDataframe:
+# MAGIC 1. Collects each partition as an R data.frame.
+# MAGIC 2. Sends the R function to the R worker.
+# MAGIC 3. Executes the function.
+# MAGIC 
+# MAGIC dapply(sparkDF,func,schema): combines results as DataFrame with provided schema.
+# MAGIC 
+# MAGIC dapplyCollect(sparkDF,func): combines results as R data.frame.
+# MAGIC 
+# MAGIC __gapply:__ applies a function to each group within a SparkDataframe. Usage: gapply() or gapplyCollet().
+# MAGIC 
+# MAGIC General algorithm:
+# MAGIC 
+# MAGIC Groups a SparkDataframe on one or more columns:
+# MAGIC 1. Collects each group as an R data.frame.
+# MAGIC 2. Sends the R function to the R worker.
+# MAGIC 3. Executes the function.
+# MAGIC 
+# MAGIC dapply(sparkDF,cols,func,schema): combines results as DataFrame with provided schema.
+# MAGIC 
+# MAGIC dapplyCollect(sparkDF,cols,func): combines results as R data.frame.
 
 # COMMAND ----------
 
@@ -70,7 +116,8 @@
 # MAGIC 
 # MAGIC __Occurred problems__:
 # MAGIC * __Regarding step 1__: The free account option of Databricks (Databricks Community) did not provide access to any Worker nodes, which are required in the Spark architecture. In order to overcome this limitation, a Full-platform 14-Day Free Trial account was created. However, this Free Trial account excluded AWS charges which are summed according to demand. 
-# MAGIC * __Regarding step 2__: The Trial account required information of an AWS account. For that reason a free AWS account was created. This account 
+# MAGIC * __Regarding step 2__: The Trial account required information of an AWS account. For that reason a free AWS account was created. This account includes charges of on demand nodes that are allocated. The verification and confirmation of this account was problematic and a call to the 24h support service of Amazon was necessary to resolve the issues. The American attendent was very helpful.
+# MAGIC * __Regarding step 3__: The information of the AWS account and its configuration for its use together with Databricks were rather counter intuitive, and several tutorials had to be followed in order to make everything work properly and in order to actually being able to create a cluster.
 
 # COMMAND ----------
 
@@ -78,7 +125,15 @@
 
 # COMMAND ----------
 
-# MAGIC %md ######Settings
+# MAGIC %md ######Cluster Settings
+
+# COMMAND ----------
+
+# MAGIC %md For initial tests a __cluster__ with following settings was created:
+# MAGIC * __Databricks Runtime Version__: 3.3 (includes Apache Spark 2.2.0, Scala 2.11)
+# MAGIC * __Driver Node__: Amazon m4.large (8.0 GB Memory, 2 Cores)
+# MAGIC * __2 Worker Nodes__: Amazon m4.large (8.0 GB Memory, 2 Cores)
+# MAGIC * __Number of Worker Nodes__: 2
 
 # COMMAND ----------
 
@@ -90,9 +145,15 @@
 
 # COMMAND ----------
 
+# MAGIC %md First step to the experiments is installing and loading the required packages into the Driver node. For this experiment, that includes the SparkR and the package TSPred, that contains our UDF functions. We also install the ggplot package for graphic generation.
+
+# COMMAND ----------
+
 library("SparkR")
 install.packages("TSPred", repos = "http://cran.us.r-project.org")
+install.packages(c("ggplot2"), repos = "http://cran.us.r-project.org")
 library("TSPred")
+library("ggplot2")
 
 # COMMAND ----------
 
@@ -100,12 +161,18 @@ library("TSPred")
 
 # COMMAND ----------
 
+# MAGIC %md A second step to the experiments is installing and loading the required packages into the Worker nodes. For this experiment, that includes the package TSPred and forecast, that contains our UDF functions, and is necessary to these functions, respectively.
+# MAGIC 
+# MAGIC For installing the packages on each node we can use the spark.lapply function that sends and executes the function provided in each worker node.
+
+# COMMAND ----------
+
+#Number of workers
 numWorkers <- 2
+#Executes the function on each worker node
 spark.lapply(1:numWorkers, function(x) {
-  #Pacotes necessarios para funcoes em fittest_models_functions
-  install.packages(c("TSPred","forecast"), repos = "http://cran.us.r-project.org")
-  #Pacotes necessarios para funcoes em results_analysis_functions
-  install.packages(c("ggplot2","Cairo"), repos = "http://cran.us.r-project.org")
+  #Pacotes necessarios para experimento com fittestMAS
+  install.packages(c("TSPred","forecast"), repos = "http://cran.us.r-project.org")  
 })
 
 # COMMAND ----------
@@ -245,10 +312,6 @@ fPolyR
 
 # COMMAND ----------
 
-#exp_url <- url("https://github.com/RebeccaSalles/TSPred/blob/master/dev/12.17/exp/Exp_Base.RData")
-#download.file(exp_url,"Exp_Base.RData",method="curl")
-#load(exp_url)
-
 install.packages("repmis", repos = "http://cran.us.r-project.org")
 library(repmis)
 
@@ -363,8 +426,8 @@ boxplot(times[,c("elapsed")], width=10, height=4)
 
 # COMMAND ----------
 
-numWorkers<-2
-numWorkerCores<-2
+numWorkers <- 4
+numWorkerCores <- 2
 sparkr.times.proc <- NULL
 for(numProc in 1:(numWorkers*numWorkerCores)){
   for(i in 1:10){
